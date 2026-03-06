@@ -1,0 +1,105 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hidden Hand Duel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <h1>Hidden Hand Duel</h1>
+      <div id="roundLabel">ラウンド: -</div>
+    </header>
+
+    <section id="modeSelect" class="panel">
+      <h2>モード選択</h2>
+      <div class="row">
+        <button id="modeCpuBtn">1P vs CPU</button>
+        <button id="modeLocalBtn">ローカル2P</button>
+      </div>
+    </section>
+
+    <section id="gameBoard" class="hidden">
+      <div class="status-grid">
+        <article class="panel">
+          <h2 id="p2Name">相手</h2>
+          <p>HP: <strong id="p2Hp">4</strong></p>
+          <p>手札: <strong id="p2HandCount">0</strong> 枚</p>
+        </article>
+
+        <article class="panel center">
+          <p>山札: <strong id="deckSize">0</strong></p>
+          <p>捨て札: <span id="discardText">なし</span></p>
+        </article>
+
+        <article class="panel">
+          <h2 id="p1Name">プレイヤー1</h2>
+          <p>HP: <strong id="p1Hp">4</strong></p>
+          <p>手札: <strong id="p1HandCount">0</strong> 枚</p>
+        </article>
+      </div>
+
+      <section class="panel">
+        <h2 id="turnLabel">ターン</h2>
+        <div id="privateInfo" class="private-note hidden"></div>
+
+        <div class="controls">
+          <div>
+            <h3>じゃんけんを選択</h3>
+            <div class="row">
+              <label><input type="radio" name="rps" value="rock"> グー</label>
+              <label><input type="radio" name="rps" value="paper"> パー</label>
+              <label><input type="radio" name="rps" value="scissors"> チョキ</label>
+            </div>
+          </div>
+
+          <div>
+            <h3>効果カード（任意）</h3>
+            <select id="cardSelect"></select>
+            <div id="cardHint" class="hint"></div>
+          </div>
+
+          <button id="confirmBtn">選択を確定</button>
+        </div>
+      </section>
+
+      <section class="panel" id="revealPanel">
+        <h2>ラウンド公開</h2>
+        <div id="revealText">まだラウンドは開始していません。</div>
+        <div id="resolutionSummary" class="summary-box hidden"></div>
+        <div class="phase-actions">
+          <button id="revealEffectsBtn">カード効果を公開して解決</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>カード効果一覧</h2>
+        <ul id="cardCatalog" class="catalog-list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>バトルログ</h2>
+        <ul id="logList"></ul>
+      </section>
+
+      <section class="row end-actions">
+        <button id="restartBtn">同モードで再スタート</button>
+      </section>
+    </section>
+  </main>
+
+  <div id="maskOverlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>端末を渡してください</h2>
+      <p id="maskText">プレイヤー2の入力に切り替えます。</p>
+      <button id="maskContinueBtn">続ける</button>
+    </div>
+  </div>
+
+  <script src="cards.js"></script>
+  <script src="ai.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
