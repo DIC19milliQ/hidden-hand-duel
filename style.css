@@ -254,3 +254,9 @@ select {
     min-width: 0;
   }
 }
+
+.footer-note {
+  text-align: center;
+  color: #666;
+}
+
