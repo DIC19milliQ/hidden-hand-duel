@@ -150,7 +150,7 @@
   }
 
   function getDisplayIndices() {
-    return [1, 0];
+    return [0, 1];
   }
 
   function focusRevealPanel() {
@@ -251,7 +251,7 @@
 
     const [left, right] = getDisplayIndices();
     currentState.log.push(
-      `ラウンド${currentState.round}: ${currentState.players[left].name} ${HAND_LABEL_JA[s1.rps]} vs ${currentState.players[right].name} ${HAND_LABEL_JA[s0.rps]}`
+      `ラウンド${currentState.round}: ${currentState.players[left].name} ${HAND_LABEL_JA[s0.rps]} vs ${currentState.players[right].name} ${HAND_LABEL_JA[s1.rps]}`
     );
 
     if (outcomes[0] === "tie") {
@@ -687,4 +687,7 @@
   window.resolveRound = resolveRound;
   window.drawByOutcome = drawByOutcome;
 })();
+
+
+
 
