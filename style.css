@@ -260,3 +260,10 @@ select {
   color: #666;
 }
 
+
+.summary-decision {
+  color: #c53030;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+

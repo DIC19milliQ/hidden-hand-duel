@@ -577,6 +577,10 @@
       return `${state.players[idx].name}: ドロー失敗`;
     }).join(" / ");
 
+    const endLine = state.gameOver
+      ? `<li class="summary-decision">決着: ${state.winner === "引き分け" ? "引き分け" : `勝者 ${state.winner}`}</li>`
+      : "";
+
     const effectItems = s.effectNotes.length
       ? s.effectNotes.map((note) => `<li>${note}</li>`).join("")
       : "<li>効果発動なし</li>";
@@ -587,6 +591,7 @@
       <ul class="summary-list">
         <li>${leftName} HP: ${s.hpBefore[left]} -> ${s.hpAfter[left]} / ${rightName} HP: ${s.hpBefore[right]} -> ${s.hpAfter[right]}</li>
         <li>${drawLine}</li>
+        ${endLine}
       </ul>
       <div class="summary-title">発動したカード効果</div>
       <ul class="summary-list">${effectItems}</ul>
@@ -687,7 +692,4 @@
   window.resolveRound = resolveRound;
   window.drawByOutcome = drawByOutcome;
 })();
-
-
-
 
