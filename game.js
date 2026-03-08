@@ -374,15 +374,10 @@
       const actor = nameToIndex.has(event.actor) ? nameToIndex.get(event.actor) : null;
       const target = nameToIndex.has(event.target) ? nameToIndex.get(event.target) : null;
       const delta = event.delta || {};
+      // HP is updated only by finalized damage/heal events.
 
       if (actor !== null && delta.hpLoss) {
         next.hp[actor] = Math.max(0, next.hp[actor] - delta.hpLoss);
-      }
-      if (target !== null && delta.damageToTarget) {
-        next.hp[target] = Math.max(0, next.hp[target] - delta.damageToTarget);
-      }
-      if (target !== null && delta.counterDamage) {
-        next.hp[target] = Math.max(0, next.hp[target] - delta.counterDamage);
       }
       if (actor !== null && delta.heal) {
         next.hp[actor] = Math.min(currentState.players[actor].maxHp || START_HP, next.hp[actor] + delta.heal);
