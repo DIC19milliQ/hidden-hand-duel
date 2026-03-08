@@ -29,6 +29,7 @@
       <div class="row">
         <button id="modeCpuBtn">1P vs CPU</button>
         <button id="modeLocalBtn">ローカル2P</button>
+        <a class="button-link" href="rules.html">ルール確認</a>
       </div>
     </section>
 
@@ -79,6 +80,7 @@
       <section class="panel" id="revealPanel">
         <h2>ラウンド公開</h2>
         <div id="revealText">まだラウンドは開始していません。</div>
+        <div id="resolutionTimeline" class="timeline-wrap hidden"></div>
         <div id="resolutionSummary" class="summary-box hidden"></div>
         <div class="phase-actions">
           <button id="revealEffectsBtn">カード効果を公開して解決</button>
@@ -91,7 +93,7 @@
       </section>
 
       <section class="panel">
-        <h2>バトルログ</h2>
+        <h2>イベントログ（簡易）</h2>
         <ul id="logList"></ul>
       </section>
 
@@ -118,4 +120,3 @@
   <script src="game.js"></script>
 </body>
 </html>
-

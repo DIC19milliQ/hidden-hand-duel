@@ -1,0 +1,72 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ルール確認 | Hidden Hand Duel</title>
+  <meta name="description" content="Hidden Hand Duel のルール説明ページ">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <h1>ルール確認</h1>
+      <a class="button-link" href="index.html">ゲームへ戻る</a>
+    </header>
+
+    <section class="panel">
+      <h2>ゲーム概要</h2>
+      <p>Hidden Hand Duel は、じゃんけんとカード効果を組み合わせた 1vs1 の読み合いゲームです。</p>
+      <ul class="summary-list">
+        <li>初期HP: 4</li>
+        <li>初期手札: 3</li>
+        <li>手札上限: 5</li>
+        <li>共有山札: 14枚</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>ラウンド進行</h2>
+      <ol class="summary-list">
+        <li>各プレイヤーは じゃんけんの手 を選択</li>
+        <li>手札がある場合はカードを1枚セット（任意でない）</li>
+        <li>じゃんけん公開</li>
+        <li>勝敗確定後にカード効果を解決</li>
+      </ol>
+      <p>あいこ時は、セットしたカードを保持したまま再じゃんけんします。</p>
+    </section>
+
+    <section class="panel">
+      <h2>基本ルール</h2>
+      <ul class="summary-list">
+        <li>じゃんけん勝者は相手に1ダメージ</li>
+        <li>ダメージを受けた側は1ドロー（効果で無効化される場合あり）</li>
+        <li>HPが0以下になった時点で決着</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>特殊ルール</h2>
+      <ul class="summary-list">
+        <li>手札がある場合、毎ラウンド1枚セット必須</li>
+        <li>HP1・手札0の状態でカード未セット勝利すると、逆転ドロー2枚</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>カード一覧（簡易）</h2>
+      <ul class="summary-list">
+        <li>渾身の一撃: 勝利時に追加1ダメージ</li>
+        <li>貫通打: 勝利時に相手効果を無視</li>
+        <li>手札崩し: 勝利時に相手手札1枚を破棄</li>
+        <li>完全防御: 敗北時の被ダメージを0</li>
+        <li>切り返し: 敗北時に軽減＋反撃（あいこ発生ラウンド無効）</li>
+        <li>崩し返し: 敗北時に相手手札1枚を破棄</li>
+        <li>補給封じ: 相手の被ダメージドローを無効化</li>
+        <li>戦利品: 勝利時に相手手札1枚を奪取</li>
+        <li>活力転化: 勝利時にHP1回復（上限4）</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

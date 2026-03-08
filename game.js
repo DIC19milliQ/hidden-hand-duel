@@ -1,5 +1,6 @@
-﻿(() => {
-  const MAX_HAND = 4;
+﻿
+(() => {
+  const MAX_HAND = 5;
   const START_HP = 4;
   const START_HAND_SIZE = 3;
 
@@ -21,6 +22,16 @@
     tie: "あいこ"
   };
 
+  const PHASE_LABEL_JA = {
+    reveal: "公開",
+    defense: "防御",
+    attack: "攻撃",
+    strategy: "戦略",
+    damage: "ダメージ",
+    draw: "ドロー",
+    bonus: "逆転",
+  };
+
   const BEATS = {
     rock: "scissors",
     paper: "rock",
@@ -28,6 +39,7 @@
   };
 
   let state = null;
+  const uiPrefs = { skipTimeline: false };
   const el = {};
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -58,6 +70,7 @@
     el.revealPanel = document.getElementById("revealPanel");
     el.revealEffectsBtn = document.getElementById("revealEffectsBtn");
     el.revealText = document.getElementById("revealText");
+    el.resolutionTimeline = document.getElementById("resolutionTimeline");
     el.resolutionSummary = document.getElementById("resolutionSummary");
     el.logList = document.getElementById("logList");
     el.cardCatalog = document.getElementById("cardCatalog");
@@ -83,6 +96,8 @@
     el.cardSelect.addEventListener("change", onCardPreview);
     el.restartBtn.addEventListener("click", onRestart);
     el.maskContinueBtn.addEventListener("click", onMaskContinue);
+    el.resolutionTimeline.addEventListener("click", onTimelineAdvance);
+    el.resolutionSummary.addEventListener("click", onSummaryAction);
   }
 
   function renderInitial() {
@@ -90,9 +105,17 @@
     el.gameBoard.classList.add("hidden");
   }
 
+  function pushImportantLog(line) {
+    state.log.push(line);
+    if (state.log.length > 40) {
+      state.log = state.log.slice(-40);
+    }
+  }
+
   function createPlayer(name) {
     return {
       name,
+      maxHp: START_HP,
       hp: START_HP,
       hand: [],
       lastRps: null,
@@ -153,6 +176,14 @@
     return [0, 1];
   }
 
+  function formatActionLog(currentState, playerIndex, selection, cardId) {
+    const player = currentState.players[playerIndex];
+    const card = getCardInHand(player, cardId);
+    const handIcon = HAND_ICON[selection.rps] || "";
+    const cardLabel = card ? card.nameJa : "カードなし";
+    return `${player.name}: ${handIcon} + ${cardLabel}`;
+  }
+
   function focusRevealPanel() {
     if (!el.revealPanel) {
       return;
@@ -204,6 +235,31 @@
     return { success: true };
   }
 
+  function drawMultipleWithCap(currentState, playerId, count) {
+    let drawnCount = 0;
+    let failReason = "";
+
+    for (let i = 0; i < count; i += 1) {
+      if (currentState.players[playerId].hand.length >= MAX_HAND) {
+        failReason = "手札上限のためドロー不可。";
+        break;
+      }
+      const drawn = drawFromTop(currentState, playerId);
+      if (!drawn) {
+        failReason = "山札切れでドロー不可。";
+        break;
+      }
+      drawnCount += 1;
+    }
+
+    return {
+      requested: count,
+      drawn: drawnCount,
+      success: drawnCount === count,
+      failReason
+    };
+  }
+
   function removePlayedCards(currentState, playedCards) {
     for (let p = 0; p < 2; p += 1) {
       const card = playedCards[p];
@@ -228,7 +284,15 @@
         tieCount: 0,
         latestSelections: null,
         outcomes: null,
-        baseDamage: null
+        baseDamage: null,
+        desperationBonusEligible: [
+          currentState.players[0].hp === 1 &&
+          currentState.players[0].hand.length === 0 &&
+          !(s0.cardId || null),
+          currentState.players[1].hp === 1 &&
+          currentState.players[1].hand.length === 0 &&
+          !(s1.cardId || null)
+        ]
       };
     }
 
@@ -250,9 +314,11 @@
     currentState.pendingRound.baseDamage = baseDamage;
 
     const [left, right] = getDisplayIndices();
-    currentState.log.push(
-      `ラウンド${currentState.round}: ${currentState.players[left].name} ${HAND_LABEL_JA[s0.rps]} vs ${currentState.players[right].name} ${HAND_LABEL_JA[s1.rps]}`
-    );
+    const leftSelection = currentState.pendingSelections[left];
+    const rightSelection = currentState.pendingSelections[right];
+    const leftAction = formatActionLog(currentState, left, leftSelection, currentState.pendingRound.lockedCardIds[left]);
+    const rightAction = formatActionLog(currentState, right, rightSelection, currentState.pendingRound.lockedCardIds[right]);
+    pushImportantLog(`R${currentState.round}: ${leftAction} / ${rightAction}`);
 
     if (outcomes[0] === "tie") {
       currentState.pendingRound.tieCount += 1;
@@ -264,7 +330,7 @@
         outcomes,
         tieCount: currentState.pendingRound.tieCount
       };
-      currentState.log.push("あいこ。カードを保持したまま再じゃんけん。");
+      pushImportantLog("あいこ。カードを保持したまま再じゃんけん。");
       return currentState.reveal;
     }
 
@@ -277,6 +343,66 @@
     };
 
     return currentState.reveal;
+  }
+
+  function pushTimeline(timeline, event) {
+    timeline.push({
+      phase: event.phase || "system",
+      actor: event.actor || "",
+      target: event.target || "",
+      card: event.card || "",
+      resultType: event.resultType || "info",
+      delta: event.delta || {},
+      message: event.message || ""
+    });
+  }
+
+  function buildTimelineSnapshots(currentState, reveal) {
+    const nameToIndex = new Map(currentState.players.map((p, i) => [p.name, i]));
+    const snapshots = [{
+      hp: [...reveal.summary.hpBefore],
+      hand: [...reveal.summary.handBefore]
+    }];
+
+    reveal.timeline.forEach((event) => {
+      const prev = snapshots[snapshots.length - 1];
+      const next = {
+        hp: [...prev.hp],
+        hand: [...prev.hand]
+      };
+
+      const actor = nameToIndex.has(event.actor) ? nameToIndex.get(event.actor) : null;
+      const target = nameToIndex.has(event.target) ? nameToIndex.get(event.target) : null;
+      const delta = event.delta || {};
+
+      if (actor !== null && delta.hpLoss) {
+        next.hp[actor] = Math.max(0, next.hp[actor] - delta.hpLoss);
+      }
+      if (target !== null && delta.damageToTarget) {
+        next.hp[target] = Math.max(0, next.hp[target] - delta.damageToTarget);
+      }
+      if (target !== null && delta.counterDamage) {
+        next.hp[target] = Math.max(0, next.hp[target] - delta.counterDamage);
+      }
+      if (actor !== null && delta.heal) {
+        next.hp[actor] = Math.min(currentState.players[actor].maxHp || START_HP, next.hp[actor] + delta.heal);
+      }
+
+      if (actor !== null && delta.draw) {
+        next.hand[actor] += delta.draw;
+      }
+      if (target !== null && delta.opponentDiscard) {
+        next.hand[target] = Math.max(0, next.hand[target] - delta.opponentDiscard);
+      }
+      if (actor !== null && target !== null && delta.steal) {
+        next.hand[actor] += delta.steal;
+        next.hand[target] = Math.max(0, next.hand[target] - delta.steal);
+      }
+
+      snapshots.push(next);
+    });
+
+    return snapshots;
   }
 
   function resolvePendingEffects(currentState) {
@@ -295,25 +421,93 @@
       getCardInHand(currentState.players[1], currentState.pendingRound.lockedCardIds[1])
     ];
 
+    const handBefore = [
+      currentState.players[0].hand.length - (playedCards[0] ? 1 : 0),
+      currentState.players[1].hand.length - (playedCards[1] ? 1 : 0)
+    ];
+
     const drawOverrides = [
       { blockDamageDraw: false },
       { blockDamageDraw: false }
     ];
+    const timeline = [];
 
     const cardResult = window.HiddenHandCards.resolveCardEffects(currentState, {
       outcomes,
       playedCards,
       damageTo: baseDamage,
-      drawOverrides
+      drawOverrides,
+      tieCount: currentState.pendingRound.tieCount
     });
+
+    cardResult.events.forEach((event) => pushTimeline(timeline, event));
 
     currentState.players[0].hp = Math.max(0, currentState.players[0].hp - cardResult.damageTo[0]);
     currentState.players[1].hp = Math.max(0, currentState.players[1].hp - cardResult.damageTo[1]);
+
+    for (let p = 0; p < 2; p += 1) {
+      pushTimeline(timeline, {
+        phase: "damage",
+        actor: currentState.players[p].name,
+        resultType: cardResult.damageTo[p] > 0 ? "success" : "no_effect",
+        delta: { hpLoss: cardResult.damageTo[p] },
+        message: cardResult.damageTo[p] > 0 ? `${cardResult.damageTo[p]}ダメージ` : "被ダメージなし"
+      });
+    }
 
     const drawResults = [
       drawByOutcome(currentState, 0, cardResult.damageTo[0], cardResult.drawOverrides[0]),
       drawByOutcome(currentState, 1, cardResult.damageTo[1], cardResult.drawOverrides[1])
     ];
+
+    for (let p = 0; p < 2; p += 1) {
+      const result = drawResults[p];
+      if (result.success) {
+        pushTimeline(timeline, {
+          phase: "draw",
+          actor: currentState.players[p].name,
+          resultType: "success",
+          delta: { draw: 1 },
+          message: "被ダメージドロー成功"
+        });
+      } else if (result.skipped) {
+        pushTimeline(timeline, {
+          phase: "draw",
+          actor: currentState.players[p].name,
+          resultType: "no_effect",
+          message: "ドロー条件なし"
+        });
+      } else {
+        pushTimeline(timeline, {
+          phase: "draw",
+          actor: currentState.players[p].name,
+          resultType: "no_effect",
+          message: `ドロー失敗: ${result.reason}`
+        });
+        pushImportantLog(`${currentState.players[p].name}のドロー失敗: ${result.reason}`);
+      }
+    }
+
+    const bonusDrawResults = [null, null];
+    for (let p = 0; p < 2; p += 1) {
+      const eligible = currentState.pendingRound.desperationBonusEligible[p];
+      if (!eligible || outcomes[p] !== "win") {
+        continue;
+      }
+      const result = drawMultipleWithCap(currentState, p, 2);
+      bonusDrawResults[p] = result;
+      pushTimeline(timeline, {
+        phase: "bonus",
+        actor: currentState.players[p].name,
+        resultType: result.drawn > 0 ? "success" : "no_effect",
+        delta: { draw: result.drawn },
+        message: `逆転ドロー ${result.drawn}/${result.requested}`
+      });
+      if (!result.success && result.failReason) {
+        pushImportantLog(`${currentState.players[p].name}の逆転ドロー失敗: ${result.failReason}`);
+      }
+    }
+
 
     removePlayedCards(currentState, playedCards);
 
@@ -324,23 +518,21 @@
       cards: [playedCards[0] ? playedCards[0].nameJa : "なし", playedCards[1] ? playedCards[1].nameJa : "なし"],
       damageTo: cardResult.damageTo,
       tieCount: currentState.pendingRound.tieCount,
+      timeline,
+      timelineStep: uiPrefs.skipTimeline ? timeline.length : 0,
+      showSummary: false,
       summary: {
         hpBefore,
         hpAfter: [currentState.players[0].hp, currentState.players[1].hp],
+        handBefore,
+        handAfter: [currentState.players[0].hand.length, currentState.players[1].hand.length],
         effectNotes: cardResult.notes,
-        drawResults
+        drawResults,
+        bonusDrawResults
       }
     };
 
-    cardResult.notes.forEach((note) => currentState.log.push(note));
-    drawResults.forEach((res, idx) => {
-      const playerName = currentState.players[idx].name;
-      if (res.success) {
-        currentState.log.push(`${playerName}はドロー成功。`);
-      } else if (!res.skipped) {
-        currentState.log.push(`${playerName}のドロー失敗: ${res.reason}`);
-      }
-    });
+    currentState.reveal.snapshots = buildTimelineSnapshots(currentState, currentState.reveal);
 
     if (currentState.players[0].hp <= 0 || currentState.players[1].hp <= 0) {
       currentState.gameOver = true;
@@ -351,7 +543,7 @@
           ? currentState.players[0].name
           : currentState.players[1].name;
       }
-      currentState.log.push(`ゲーム終了。勝者: ${currentState.winner}`);
+      pushImportantLog(`ゲーム終了。勝者: ${currentState.winner}`);
     }
 
     currentState.pendingSelections = [null, null];
@@ -402,15 +594,22 @@
 
     const selectedRps = document.querySelector('input[name="rps"]:checked');
     if (!selectedRps) {
-      state.log.push("じゃんけん（グー/パー/チョキ）を選択してください。");
+      pushImportantLog("じゃんけん（グー/パー/チョキ）を選択してください。");
       render();
       return;
     }
 
     const playerId = getCurrentInputPlayerId();
+    const selectedCardId = readCurrentCardSelection();
+    if (state.roundPhase === "set" && state.players[playerId].hand.length > 0 && !selectedCardId) {
+      pushImportantLog("手札があるためカードを1枚選択してください。");
+      render();
+      return;
+    }
+
     submitSelection(playerId, {
       rps: selectedRps.value,
-      cardId: readCurrentCardSelection()
+      cardId: selectedCardId
     });
 
     if (state.mode === "cpu") {
@@ -440,12 +639,65 @@
     focusRevealPanel();
   }
 
+  function onTimelineAdvance(ev) {
+    if (ev && ev.target && (ev.target.closest(".timeline-toggle") || ev.target.closest(".timeline-skip"))) {
+      return;
+    }
+    if (!state || !state.reveal || state.reveal.phase !== "resolved" || state.reveal.showSummary) {
+      return;
+    }
+
+    const total = state.reveal.timeline.length;
+    const step = state.reveal.timelineStep || 0;
+
+    if (step < total) {
+      if (uiPrefs.skipTimeline) {
+        state.reveal.timelineStep = total;
+      } else {
+        state.reveal.timelineStep = step + 1;
+      }
+      render();
+      return;
+    }
+
+    state.reveal.showSummary = true;
+    render();
+  }
+
+  function onToggleTimelineSkip(skip) {
+    uiPrefs.skipTimeline = !!skip;
+    if (!state || !state.reveal || state.reveal.phase !== "resolved") {
+      return;
+    }
+    if (uiPrefs.skipTimeline) {
+      state.reveal.timelineStep = state.reveal.timeline.length;
+    }
+    render();
+  }
+
+  function onSummaryAction() {
+    if (!state || !state.reveal || !state.reveal.showSummary || state.gameOver) {
+      return;
+    }
+    focusInputPanel();
+  }
+  function focusInputPanel() {
+    if (!el.turnLabel) {
+      return;
+    }
+    const panel = el.turnLabel.closest(".panel");
+    if (panel) {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
   function clearSelectionInputs() {
     const checked = document.querySelector('input[name="rps"]:checked');
     if (checked) {
       checked.checked = false;
     }
-    el.cardSelect.selectedIndex = 0;
+    if (el.cardSelect.options.length > 0) {
+      el.cardSelect.selectedIndex = 0;
+    }
     el.cardHint.textContent = "";
   }
 
@@ -486,7 +738,10 @@
     }
 
     const cards = window.HiddenHandCards.getPlayableCards(player, state);
-    const options = ['<option value="">出さない</option>'];
+    const options = [];
+    if (!cards.length) {
+      options.push('<option value="">出せるカードなし（出さない）</option>');
+    }
     cards.forEach((card) => {
       const typeLabel = window.HiddenHandCards.TYPE_LABELS_JA[card.type];
       options.push(`<option value="${card.id}">${card.nameJa} [${typeLabel}]</option>`);
@@ -502,7 +757,7 @@
       .join("");
   }
 
-  function renderRevealLane(name, rps, outcome, extra) {
+  function renderRevealLane(name, rps, outcome, cardText, cardStateClass, extra) {
     const badgeClass = outcome === "win" ? "badge-win" : outcome === "loss" ? "badge-loss" : "badge-tie";
     return `
       <div class="reveal-lane">
@@ -510,6 +765,7 @@
         <div class="lane-hand">${HAND_ICON[rps]}</div>
         <div class="lane-label">${HAND_LABEL_JA[rps]}</div>
         <div class="outcome-badge ${badgeClass}">${OUTCOME_LABEL_JA[outcome]}</div>
+        <div class="lane-card ${cardStateClass}">${cardText}</div>
         ${extra ? `<div class="lane-extra">${extra}</div>` : ""}
       </div>
     `;
@@ -527,26 +783,26 @@
     const leftSel = state.reveal.selections[left];
     const rightSel = state.reveal.selections[right];
 
-    const leftExtra = state.reveal.phase === "resolved"
-      ? `カード: ${state.reveal.cards[left]} / 被ダメージ: ${state.reveal.damageTo[left]}`
-      : "";
-    const rightExtra = state.reveal.phase === "resolved"
-      ? `カード: ${state.reveal.cards[right]} / 被ダメージ: ${state.reveal.damageTo[right]}`
-      : "";
+    const resolved = state.reveal.phase === "resolved";
+    const leftCardText = resolved ? `カード: ${state.reveal.cards[left]}` : "カード: 伏せたまま";
+    const rightCardText = resolved ? `カード: ${state.reveal.cards[right]}` : "カード: 伏せたまま";
+
+    const leftExtra = resolved ? `被ダメージ: ${state.reveal.damageTo[left]}` : "";
+    const rightExtra = resolved ? `被ダメージ: ${state.reveal.damageTo[right]}` : "";
 
     let header = "じゃんけん公開";
     if (state.reveal.phase === "tie") {
       header = `あいこ（${state.reveal.tieCount}回目）: もう一度じゃんけん`;
-    } else if (state.reveal.phase === "resolved") {
-      header = "カード効果解決済み";
+    } else if (resolved) {
+      header = "カード効果解決中";
     }
 
     const html = `
       <div class="reveal-wrap">
         <div class="reveal-head">${header}</div>
         <div class="reveal-grid">
-          ${renderRevealLane(leftName, leftSel.rps, state.reveal.outcomes[left], leftExtra)}
-          ${renderRevealLane(rightName, rightSel.rps, state.reveal.outcomes[right], rightExtra)}
+          ${renderRevealLane(leftName, leftSel.rps, state.reveal.outcomes[left], leftCardText, resolved ? "card-revealed" : "card-hidden", leftExtra)}
+          ${renderRevealLane(rightName, rightSel.rps, state.reveal.outcomes[right], rightCardText, resolved ? "card-revealed" : "card-hidden", rightExtra)}
         </div>
       </div>
     `;
@@ -554,8 +810,94 @@
     el.revealText.innerHTML = html;
   }
 
+  function formatDelta(delta) {
+    if (!delta) {
+      return "";
+    }
+    const parts = [];
+    if (delta.damageToTarget) parts.push(`与ダメ+${delta.damageToTarget}`);
+    if (delta.preventedDamage) parts.push(`軽減${delta.preventedDamage}`);
+    if (delta.reducedSelfDamage) parts.push(`被ダメ軽減${delta.reducedSelfDamage}`);
+    if (delta.counterDamage) parts.push(`反撃${delta.counterDamage}`);
+    if (delta.opponentDiscard) parts.push(`相手破棄${delta.opponentDiscard}`);
+    if (delta.heal) parts.push(`回復+${delta.heal}`);
+    if (delta.steal) parts.push(`奪取${delta.steal}`);
+    if (delta.hpLoss !== undefined) parts.push(`被ダメ${delta.hpLoss}`);
+    if (delta.draw) parts.push(`ドロー+${delta.draw}`);
+    return parts.join(" / ");
+  }
+
+  function renderTimeline() {
+    if (!state.reveal || !state.reveal.timeline || !state.reveal.timeline.length || state.reveal.phase !== "resolved" || state.reveal.showSummary) {
+      el.resolutionTimeline.classList.add("hidden");
+      el.resolutionTimeline.innerHTML = "";
+      return;
+    }
+
+    const total = state.reveal.timeline.length;
+    const step = Math.max(0, Math.min(total, state.reveal.timelineStep || 0));
+    const event = step > 0 ? state.reveal.timeline[step - 1] : null;
+    const snapshot = state.reveal.snapshots && state.reveal.snapshots[step]
+      ? state.reveal.snapshots[step]
+      : { hp: [...state.reveal.summary.hpBefore], hand: [...state.reveal.summary.handBefore] };
+
+    const [left, right] = getDisplayIndices();
+    const leftName = state.players[left].name;
+    const rightName = state.players[right].name;
+
+    const phaseLabel = event ? (PHASE_LABEL_JA[event.phase] || event.phase) : "開始";
+    const cardLabel = event && event.card ? `<span class="event-card">${event.card}</span>` : "";
+    const eventActor = event && event.actor ? `<span class="event-actor">${event.actor}</span>` : "";
+    const deltaText = event ? formatDelta(event.delta) : "";
+    const deltaHtml = deltaText ? `<div class="event-delta">${deltaText}</div>` : "";
+    const bodyText = event ? (event.message || "") : "画面タップで解決ステップを進めます。";
+
+    const hintText = uiPrefs.skipTimeline
+      ? "スキップ有効: タップでサマリーへ"
+      : (step < total ? "画面タップで次へ / 最後にタップでサマリー" : "もう一度タップでサマリー表示");
+
+    el.resolutionTimeline.classList.remove("hidden");
+    el.resolutionTimeline.innerHTML = `
+      <div class="timeline-top">
+        <div class="timeline-progress">解決 ${step} / ${total}</div>
+        <label class="timeline-toggle" for="timelineSkipToggle">
+          <input type="checkbox" id="timelineSkipToggle" ${uiPrefs.skipTimeline ? "checked" : ""}> アニメーションをスキップ
+        </label>
+      </div>
+      <div class="timeline-hud">
+        <div class="hud-item"><strong>${leftName}</strong> HP ${snapshot.hp[left]} / 手札 ${snapshot.hand[left]}</div>
+        <div class="hud-item"><strong>${rightName}</strong> HP ${snapshot.hp[right]} / 手札 ${snapshot.hand[right]}</div>
+      </div>
+      <div class="timeline-stage result-${event ? event.resultType : "info"}">
+        <div class="event-top"><span class="event-phase">${phaseLabel}</span>${eventActor}${cardLabel}</div>
+        <div class="event-body">${bodyText}</div>
+        ${deltaHtml}
+      </div>
+      <div class="timeline-actions">
+        <button type="button" class="timeline-skip">解決をスキップしてサマリー</button>
+        <span class="timeline-hint">${hintText}</span>
+      </div>
+    `;
+
+    const skipToggle = el.resolutionTimeline.querySelector("#timelineSkipToggle");
+    if (skipToggle) {
+      skipToggle.addEventListener("click", (e) => e.stopPropagation());
+      skipToggle.addEventListener("change", (e) => onToggleTimelineSkip(e.target.checked));
+    }
+
+    const skipBtn = el.resolutionTimeline.querySelector(".timeline-skip");
+    if (skipBtn) {
+      skipBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.reveal.timelineStep = total;
+        state.reveal.showSummary = true;
+        render();
+      });
+    }
+  }
+
   function renderResolutionSummary() {
-    if (!state.reveal || state.reveal.phase !== "resolved" || !state.reveal.summary) {
+    if (!state.reveal || state.reveal.phase !== "resolved" || !state.reveal.summary || !state.reveal.showSummary) {
       el.resolutionSummary.classList.add("hidden");
       el.resolutionSummary.innerHTML = "";
       return;
@@ -568,36 +910,34 @@
 
     const drawLine = [left, right].map((idx) => {
       const result = s.drawResults[idx];
-      if (result.success) {
-        return `${state.players[idx].name}: ドロー成功`;
-      }
-      if (result.skipped) {
-        return `${state.players[idx].name}: ドローなし`;
-      }
+      if (result.success) return `${state.players[idx].name}: ドロー成功`;
+      if (result.skipped) return `${state.players[idx].name}: ドローなし`;
       return `${state.players[idx].name}: ドロー失敗`;
+    }).join(" / ");
+
+    const bonusLine = [left, right].map((idx) => {
+      const result = s.bonusDrawResults ? s.bonusDrawResults[idx] : null;
+      if (!result) return `${state.players[idx].name}: 逆転ドローなし`;
+      if (result.success) return `${state.players[idx].name}: 逆転ドロー ${result.drawn}/${result.requested}`;
+      return `${state.players[idx].name}: 逆転ドロー ${result.drawn}/${result.requested}（途中停止）`;
     }).join(" / ");
 
     const endLine = state.gameOver
       ? `<li class="summary-decision">決着: ${state.winner === "引き分け" ? "引き分け" : `勝者 ${state.winner}`}</li>`
       : "";
 
-    const effectItems = s.effectNotes.length
-      ? s.effectNotes.map((note) => `<li>${note}</li>`).join("")
-      : "<li>効果発動なし</li>";
-
     el.resolutionSummary.classList.remove("hidden");
     el.resolutionSummary.innerHTML = `
-      <div class="summary-title">解決サマリー</div>
+      <div class="summary-title">最終結果サマリー</div>
       <ul class="summary-list">
         <li>${leftName} HP: ${s.hpBefore[left]} -> ${s.hpAfter[left]} / ${rightName} HP: ${s.hpBefore[right]} -> ${s.hpAfter[right]}</li>
+        <li>${leftName} 手札: ${s.handBefore[left]} -> ${s.handAfter[left]} / ${rightName} 手札: ${s.handBefore[right]} -> ${s.handAfter[right]}</li>
         <li>${drawLine}</li>
+        <li>${bonusLine}</li>
         ${endLine}
       </ul>
-      <div class="summary-title">発動したカード効果</div>
-      <ul class="summary-list">${effectItems}</ul>
     `;
   }
-
   function renderPrivateInfo() {
     if (!state) {
       return;
@@ -607,9 +947,7 @@
       const playerId = getCurrentInputPlayerId();
       const lockedId = state.pendingRound.lockedCardIds[playerId];
       const card = getCardInHand(state.players[playerId], lockedId);
-      const msg = card
-        ? `このラウンドのセットカード: ${card.nameJa}`
-        : "このラウンドはカード未セット。";
+      const msg = card ? `このラウンドのセットカード: ${card.nameJa}` : "このラウンドはカード未セット。";
       el.privateInfo.classList.remove("hidden");
       el.privateInfo.textContent = msg;
       return;
@@ -668,6 +1006,7 @@
     renderCardCatalog();
     renderPrivateInfo();
     renderReveal();
+    renderTimeline();
     renderResolutionSummary();
     renderLog();
 
@@ -692,4 +1031,24 @@
   window.resolveRound = resolveRound;
   window.drawByOutcome = drawByOutcome;
 })();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

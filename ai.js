@@ -51,7 +51,11 @@
       return strategy.id;
     }
 
-    return null;
+    if (!cards.length) {
+      return null;
+    }
+
+    return cards[Math.floor(Math.random() * cards.length)].id;
   }
 
   function chooseCpuAction(state, cpuId) {
